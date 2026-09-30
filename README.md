@@ -2,6 +2,8 @@
 
 A browser app for comparing a protein reference sequence against phylogenetic clades and displaying per-site identity on a structure and sequence alignment.
 
+The app can be found at [https://wrf.github.io/cladescope/](https://wrf.github.io/cladescope/) .
+
 ## Use the app
 
 - The demo loads Aequorea GFP (1EMA, mmCIF), the supplied 13-sequence GFP alignment, and the supplied tree converted to rooted Newick with bootstrap annotations removed. The reference and structure-associated sequence is `Aequorea_victoria|AAA27721.1__WT-GFP`, chain A.
