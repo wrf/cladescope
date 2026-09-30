@@ -1,0 +1,9 @@
+{
+  "structure": "1EMA.cif",
+  "format": "cif",
+  "alignment": "demo-alignment.fasta",
+  "tree": "demo-tree.nwk",
+  "referenceSequence": "Aequorea_victoria|AAA27721.1__WT-GFP",
+  "structureSequence": "Aequorea_victoria|AAA27721.1__WT-GFP",
+  "chain": "A"
+}
