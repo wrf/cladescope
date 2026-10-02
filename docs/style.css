@@ -9,3 +9,5 @@ img.mark{width:40px;height:40px;padding:0;background:none}.viewcontrols{display:
 input:disabled{opacity:.55;background:#edf1f4;color:#768796}.filestats{margin-top:16px}.statgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:14px;background:#f3f7fa;border-radius:6px}.statgrid span{font-size:14px;overflow-wrap:anywhere}.statgrid label{color:#526d80}.structuremetadata{margin-top:16px}.structuremetadata h3{font-size:15px;margin:22px 0 10px}.structuremetadata #structureMetadata{overflow-x:auto}.metadatafields{margin-top:16px;width:100%;min-width:0}.metadatafields th{width:170px}.metadatafields td{overflow-wrap:anywhere}.structuremetadata .hint{padding:0}.structuremetadata p{font-size:14px}@media(max-width:600px){.statgrid{grid-template-columns:1fr 1fr}}
 
 .overlapcontrol{margin:12px 0 8px}
+
+.structure .panelhead{flex-wrap:wrap}.structure .panelhead>div{flex-wrap:wrap;align-items:center}

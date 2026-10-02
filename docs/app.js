@@ -171,7 +171,7 @@ function renderFileInformation(names,metadata){
   section('Ligands and non-polymer components',['ID','Name','Chains','Residues'],(metadata.ligands||[]).map(x=>[x.id,x.name,x.chains,x.copies]));
   const note=document.createElement('p');note.className='hint';note.textContent=metadata.error?'Some metadata could not be read: '+metadata.error:'Metadata is read from the loaded file. Chain and residue counts describe observed coordinates, not missing residues or inferred assemblies. Unavailable fields are omitted.';content.append(note);$('structureMetadata').replaceChildren(content);
 }
-function setDataset(seqs,tree,data,format,fileNames={}){const extra=validateTree(tree,seqs);let metadata;try{metadata=StructureMetadata.parse(data,format)}catch(error){metadata={format:format==='cif'?'mmCIF':'PDB',error:error.message,chains:[],ligands:[]}}loadStructure(data,format);state.seqs=seqs;state.tree=tree;state.inputTree=structuredClone(tree);$('ladderize').value='input';state.selectedNode=tree;state.clade1=tree.children.length>1?makeClade(tree.children[0]):null;state.clade2=tree.children.length>1?makeClade(tree.children[1]):null;state.reference=seqs[0].id;state.structureSeq=seqs[0].id;state.selectedSite=null;options('reference',seqs.map(x=>x.id),state.reference);options('structureSeq',seqs.map(x=>x.id),state.structureSeq);message(extra?extra+' alignment sequences are absent from the tree and excluded from comparisons.':'');mapStructure();renderFileInformation(fileNames,metadata);update()}
+function setDataset(seqs,tree,data,format,fileNames={}){const extra=validateTree(tree,seqs);let metadata;try{metadata=StructureMetadata.parse(data,format)}catch(error){metadata={format:format==='cif'?'mmCIF':'PDB',error:error.message,chains:[],ligands:[]}}loadStructure(data,format);state.structureFile=fileNames.structure||('structure.'+(format==='cif'?'cif':'pdb'));state.seqs=seqs;state.tree=tree;state.inputTree=structuredClone(tree);$('ladderize').value='input';state.selectedNode=tree;state.clade1=tree.children.length>1?makeClade(tree.children[0]):null;state.clade2=tree.children.length>1?makeClade(tree.children[1]):null;state.reference=seqs[0].id;state.structureSeq=seqs[0].id;state.selectedSite=null;options('reference',seqs.map(x=>x.id),state.reference);options('structureSeq',seqs.map(x=>x.id),state.structureSeq);message(extra?extra+' alignment sequences are absent from the tree and excluded from comparisons.':'');mapStructure();renderFileInformation(fileNames,metadata);update()}
 async function fetchDemoFile(path){const response=await fetch(path);if(!response.ok)throw Error('Could not load demo file: '+path);return response.text()}
 async function demo(){
   try{
@@ -186,6 +186,98 @@ async function demo(){
     mapStructure();update();
   }catch(e){message(e.message)}
 }
+
+function exportCategory(site){
+  if(!site)return 'no_data';
+  if(!isComparison())return site.score===null?'no_data':site.score<50?'unconserved':'identical';
+  const a=site.clade1,b=site.clade2,t=Number($('threshold').value);
+  if(a.score===null||b.score===null)return 'no_data';
+  const one=a.score>=t,two=b.score>=t;
+  if(!one&&!two)return 'unconserved';
+  if(one&&!two)return 'clade_1_conserved';
+  if(two&&!one)return 'clade_2_conserved';
+  return a.dominant.some(aa=>b.dominant.includes(aa))?'identical':'diverging';
+}
+function exportResidueColors(){
+  const mapped=new Map();for(const [c,r] of state.mapping)mapped.set(r.key,{color:siteColor(state.scores[c]),group:exportCategory(state.scores[c])});
+  const rows=[];for(const [chain,residues] of chainResidues)for(const r of residues)rows.push({chain,resi:r.resi,icode:r.icode||'',...(chain===state.chain?mapped.get(r.key):null)||{color:'#bfbf94',group:'no_data'}});
+  return rows;
+}
+function exportScriptName(program){return 'cladescope_'+(state.structureFile||'structure').replace(/\.(?:pdb|cif|mmcif)$/i,'').toLowerCase().replace(/[^a-z0-9_-]+/g,'_')+'_'+program+'.py'}
+function colorScript(program){
+  const rows=exportResidueColors();if(!rows.length)throw Error('Load a structure before exporting.');
+  // One Python string per JSON line avoids long lines and safely escapes filenames.
+  const payload=JSON.stringify({file:state.structureFile||'structure.cif',residues:rows},null,2).split('\n').map(line=>'    '+JSON.stringify(line+'\n')).join('\n');
+  const header='# CladeScope residue colors: '+(isComparison()?'Comparison':'Identity')+' mode\n# Preload the same PDB/CIF file before running this script. Nothing is loaded here.\n# With multiple structures open, set TARGET below to the desired object/model.\n# Selection names use underscores in place of spaces.\n# Groups follow the current conservation threshold and clade consensus amino acids.\n# Identity mode: identical = identity >= 50%; unconserved = identity < 50%.\n# The temporary gold inspection highlight is excluded.\n';
+  const common='import json\ndata = json.loads(\n'+payload+'\n)\ngroup_names = ["clade_1_conserved", "clade_2_conserved", "diverging", "identical", "unconserved", "no_data"]\n';
+  if(program==='pymol')return header+'# Run with File > Run Script, or run /path/to/'+exportScriptName(program)+'\n'+`from pymol import cmd
+cmd.hide("everything", "solvent")
+TARGET = ""  # Optional: name of the already loaded PyMOL object.
+objects = cmd.get_object_list("all")
+if not TARGET:
+    if len(objects) != 1:
+        raise ValueError("Preload one structure, or set TARGET to its PyMOL object name.")
+    TARGET = objects[0]
+if TARGET not in objects:
+    raise ValueError("TARGET is not an already loaded PyMOL object.")
+`+common+`records = {(r["chain"], str(r["resi"]) + r["icode"]): r for r in data["residues"]}
+by_color = {}
+groups = {name: [] for name in group_names}
+for atom in cmd.get_model(TARGET).atom:
+    record = records.get((atom.chain, atom.resi))
+    if record:
+        by_color.setdefault(record["color"], []).append(atom.index)
+        groups[record["group"]].append(atom.index)
+def atom_selection(indices):
+    return "model " + json.dumps(TARGET) + " and index " + "+".join(map(str, indices)) if indices else "none"
+for i, (hex_color, indices) in enumerate(by_color.items()):
+    name = "cladescope_rgb_" + str(i)
+    cmd.set_color(name, [int(hex_color[j:j+2], 16) / 255.0 for j in (1, 3, 5)])
+    cmd.color(name, atom_selection(indices))
+for name, indices in groups.items():
+    cmd.select(name, atom_selection(indices), enable=0)
+print("CladeScope colors applied to " + TARGET + ". Selections: " + ", ".join(group_names))
+`;
+  if(program==='chimerax')return header+'# Run with open /path/to/'+exportScriptName(program)+'\n'+`from chimerax.core.commands import run
+from chimerax.atomic import AtomicStructure
+run(session, "hide solvent atoms")
+TARGET = ""  # Optional: model ID without #, for example "1" or "1.1".
+models = session.models.list(type=AtomicStructure)
+if TARGET:
+    models = [m for m in models if m.id_string == TARGET]
+if len(models) != 1:
+    raise ValueError("Preload one structure, or set TARGET to its ChimeraX model ID.")
+model = models[0]
+`+common+`records = {(r["chain"], int(r["resi"]), r["icode"]): r for r in data["residues"]}
+groups = {name: [] for name in group_names}
+for residue in model.residues:
+    record = records.get((residue.chain_id, residue.number, residue.insertion_code.strip()))
+    if record:
+        rgba = [int(record["color"][j:j+2], 16) for j in (1, 3, 5)] + [255]
+        residue.atoms.colors = rgba
+        residue.ribbon_color = rgba
+        groups[record["group"]].append(residue)
+# Build frozen named selections from atom selections, avoiding chain-name parsing.
+previous = [(m, m.atoms.selected.copy()) for m in session.models.list(type=AtomicStructure)]
+try:
+    for name, residues in groups.items():
+        run(session, "select clear")
+        for residue in residues:
+            residue.atoms.selected = True
+        run(session, "name frozen " + name + " sel")
+finally:
+    run(session, "select clear")
+    for m, selected in previous:
+        m.atoms.selected = selected
+session.logger.info("CladeScope colors applied. Selections: " + ", ".join(group_names))
+`;
+  throw Error('Unsupported export program.');
+}
+function downloadColorScript(){
+  try{const program=$('exportProgram').value,script=colorScript(program),url=URL.createObjectURL(new Blob([script],{type:'text/x-python;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=exportScriptName(program);document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);message('Script exported. Preload '+state.structureFile+' in '+(program==='pymol'?'PyMOL':'ChimeraX')+', then run the script.')}catch(e){message(e.message)}
+}
+
+$('exportScript').onclick=downloadColorScript;
 $('load').onclick=async()=>{try{const files=['fasta','newick','pdb'].map(id=>$(id).files[0]);if(files.some(x=>!x))throw Error('Select all three files first.');if(files.some(x=>x.size>25*1024*1024))throw Error('Each file must be below 25 MB for this prototype.');const [fa,nw,pdb]=await Promise.all(files.map(f=>f.text()));const seqs=parseFasta(fa);if(seqs.length*seqs[0].seq.length>250000)throw Error('This prototype supports up to 250,000 alignment cells.');const tree=parseNewick(nw);setDataset(seqs,tree,pdb,/\.mm?cif$|\.cif$/i.test(files[2].name)?'cif':'pdb',{alignment:files[0].name,tree:files[1].name,structure:files[2].name});}catch(e){message(e.message)}};
 $('remap').onclick=()=>{try{state.structureSeq=$('structureSeq').value;state.chain=$('chain').value;message('');mapStructure();update()}catch(e){message(e.message)}};
 $('reference').onchange=()=>{state.reference=$('reference').value;update()};['mode','palette','cutoff','threshold','includeOverlap','filter','representation','showLigands','showWater','showOtherChains'].forEach(id=>$(id).onchange=update);$('all').onclick=()=>{state.selectedNode=state.tree;update()};$('fit').onclick=()=>{const selections=structureSelections();viewer.zoomTo({predicate:a=>selections.protein.predicate(a)||($('showLigands').checked&&selections.ligand.predicate(a))||($('showWater').checked&&selections.water.predicate(a))});viewer.render()};$('demo').onclick=demo;
