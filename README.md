@@ -4,7 +4,7 @@ A browser app for comparing sequences between protein clades, or reference seque
 
 The app can be found at [https://wrf.github.io/cladescope/](https://wrf.github.io/cladescope/) .
 
-![screenshot of cladescope comparison mode][https://github.com/wrf/cladescope/blob/main/docs/cladescope comparison screenshot.png]
+![screenshot of cladescope comparison mode][https://github.com/wrf/cladescope/blob/main/docs/cladescope_comparison_screenshot.png]
 
 ## Comparison and Identity modes
 
