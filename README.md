@@ -1,18 +1,39 @@
 # CladeScope
 
-A browser app for comparing a protein reference sequence against phylogenetic clades and displaying per-site identity on a structure and sequence alignment.
+A browser app for comparing sequences between protein clades, or reference sequence against phylogenetic clades, and displaying per-site conservation on a structure and sequence alignment.
 
 The app can be found at [https://wrf.github.io/cladescope/](https://wrf.github.io/cladescope/) .
 
-## Use the app
+![screenshot of cladescope comparison mode][https://github.com/wrf/cladescope/blob/main/docs/cladescope comparison screenshot.png]
 
-- The demo loads Aequorea GFP (1EMA, mmCIF), the supplied 13-sequence GFP alignment, and the supplied tree converted to rooted Newick with bootstrap annotations removed. The reference and structure-associated sequence is `Aequorea_victoria|AAA27721.1__WT-GFP`, chain A.
-- Select a tree node to use its descendant sequences as the comparison group.
-- Choose the reference sequence, color palette, and minimum non-gap fraction.
-- Click alignment cells or mapped structure residues to inspect a site.
-- Use **Show ligands**, **Show water**, and **Show other chains** independently. Water and ligands also respect the chain visibility setting.
-- Ladderize by small or large clades first, or restore input ordering.
-- Select a non-root node, then choose **Root at selected branch**. Rerooting places the root at the branch midpoint and resets comparison to all tree sequences. **Restore input root** restores the uploaded root.
+## Comparison and Identity modes
+
+**Comparison** is the default. Click a tree node, then choose **Assign to comparison clade 1** (blue) or **Assign to comparison clade 2** (red). Assignments are explicit and persist while clicking other nodes, ladderizing, or rerooting. The two root child groups are assigned initially when available.
+
+Comparison scores use the **most frequent amino acid in each clade**, independently of the selected reference. Each clade can have a different dominant amino acid. Ties are retained in the site inspector.
+
+- Blue = clade 1's most frequent amino-acid percentage, scaled to 255.
+- Red = clade 2's most frequent amino-acid percentage, scaled to 255.
+- Green = strongest shared amino-acid percentage: `max_AA min(frequency in clade 1, frequency in clade 2)`, scaled to 255. This is not pooled reference identity and is independent of clade sizes.
+- Neither clade reaches **Minimum conservation (%)** = dark gray (`#555555`). The default is 50%, and the threshold is inclusive. At 100%, at least one clade must be fully conserved; different fixed residues in both are magenta and the same fixed residue in both is white.
+- No usable observations in either clade = beige (no data).
+
+**Minimum non-gap fraction** still controls the denominator, independently of the conservation display threshold. Frequencies exclude gaps and X unless non-gap coverage is below the cutoff, when the full group size is the denominator. Reference gaps do not mask Comparison results, although unmapped sites cannot be displayed on the structure.
+
+| Clade 1 | Clade 2 | Color |
+|---|---|---|
+| 100% L | 100% L | White, `#ffffff` |
+| 100% L | 100% V | Bright magenta, `#ff00ff` |
+| 100% L | 50% L / 50% V | `#8080ff` |
+| 50% L / 50% V | 50% L / 50% V | `#808080` at threshold 50; dark gray at thresholds above 50 |
+
+The 100% L versus 100% V result remains magenta for unequal group sizes or a reference residue absent from both clades. The palette menu is disabled in Comparison mode because RGB channels are fixed.
+
+Choose **Identity** next to Color Palette for the original single-clade workflow. Clicking a node immediately selects the identity group, and the four original palettes are enabled. Existing structure controls, mapping, loading, and site inspection are retained.
+
+Alignment names have subtle blue/red backgrounds for clade membership. **Include overlapping species** defaults to off. If one assigned clade is a proper subclade of the other, the smaller clade stays intact and its species are removed from the larger clade for scoring and name highlights. For example, 3 species versus a parent containing 10 becomes 3 versus 7. Either assignment can be the parent. Turning the toggle on counts all selected species in both groups. Identical groups have no exclusive species; choose distinct clades or enable the toggle. Partial overlaps, possible after rerooting and retaining assignments, are removed from both groups when the toggle is off. The summaries show the effective count and original selection size. **Selected groups + reference only** filters the alignment to the union in Comparison mode, or the clicked clade in Identity mode, always keeping the reference visible.
+
+The original app and original export remain separate; this is a new version.
 
 ### Your files
 
