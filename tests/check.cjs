@@ -1,4 +1,4 @@
-const fs=require('fs'),vm=require('vm'),assert=require('assert');let src=fs.readFileSync(require('path').join(__dirname,'../docs/app.js'),'utf8');src=src.slice(0,src.indexOf("$('load').onclick"));const controls={palette:{value:'blue'},showLigands:{checked:true},showWater:{checked:false},showOtherChains:{checked:true}};const ctx={window:{},document:{getElementById:id=>controls[id]||{},querySelector:()=>({})},console,structuredClone,fs,__dirname,require};vm.createContext(ctx);vm.runInContext(src,ctx);vm.runInContext(`
+const fs=require('fs'),vm=require('vm'),assert=require('assert');let src=fs.readFileSync(require('path').join(__dirname,'../docs/app.js'),'utf8');src=src.slice(0,src.indexOf("$('load').onclick"));const controls={mode:{value:'comparison'},palette:{value:'blue'},showLigands:{checked:true},showWater:{checked:false},showOtherChains:{checked:true}};const ctx={window:{},document:{getElementById:id=>controls[id]||{},querySelector:()=>({})},console,structuredClone,fs,__dirname,require};vm.createContext(ctx);vm.runInContext(src,ctx);vm.runInContext(`
 function check(v,m){if(!v)throw Error(m)}
 const rooted=parseNewick("[&R] ((A:1[tip],B:2)AB:3,(C:4,D:5)CD:6)Root:0;");check(rooted.name==='Root'&&rooted.children[0].name==='AB','Preserve input root');
 check(parseNewick("[&R] ('a[b]':1,'it''s':2)root;").ids.join('|')==="a[b]|it's",'Quoted names and comments');
@@ -25,4 +25,35 @@ const cif=fs.readFileSync(require('path').join(__dirname,'../docs/1EMA.cif'),'ut
 const residues=cif.split('\\n').filter(l=>l.startsWith('ATOM ')).map(l=>l.trim().split(/\\s+/)).filter(v=>v[3]==='CA'&&v[18]==='A'&&AA[v[17]]).map(v=>AA[v[17]]);
 const native=demoSeqs.find(x=>x.id==='Aequorea_victoria|AAA27721.1__WT-GFP').seq.replace(/-/g,'');const demoPairs=alignMap(native,residues.join(''));const agreement=demoPairs.filter(([i,j])=>native[i]===residues[j]).length/demoPairs.length;
 check(residues.length>200&&agreement>.95,'GFP structure/reference agreement');console.log('GFP demo:',demoTree.ids.length,'taxa;',residues.length,'observed alpha carbons;', (100*agreement).toFixed(1)+'% sequence agreement');
-`,ctx);console.log('Passed: rooted/commented Newick, quoted names, reroot topology and distances, repeated rerooting, ladderizing and original order, chain/ligand visibility, identity scoring, residue mapping.');
+
+
+const toy=parseFasta('>reference\\nA-G\\n>one\\nLLG\\n>two\\nVLG\\n>three\\nVLG\\n>four\\nVLG');
+const compare=calculateComparison(toy,'reference',['one'],['two','three','four'],.5);
+check(compare[0].comparisonColor==='#ff00ff','Fixed L vs V is magenta despite unequal sizes and absent reference AA');
+check(compare[0].clade1.dominant[0]==='L'&&compare[0].clade2.dominant[0]==='V','Each clade has its own consensus');
+check(compare[1].comparisonColor==='#ffffff','Reference gaps do not mask conserved comparison columns');
+check(compare[2].comparisonColor==='#ffffff','Same AA fixed in both is white');
+const otherReference=calculateComparison(toy,'two',['one'],['two','three','four'],.5);check(compare.every((x,i)=>x.comparisonColor===otherReference[i].comparisonColor),'Comparison is independent of selected reference');
+const ties=parseFasta('>r\\nA\\n>a\\nL\\n>b\\nV\\n>c\\nL\\n>d\\nV');
+const tied=calculateComparison(ties,'r',['a','b'],['c','d'],.5)[0];check(tied.comparisonColor==='#808080'&&tied.clade1.dominant.join('/')==='L/V','Exactly 50/50 meets the inclusive default threshold and ties are retained');
+const diffuse=parseFasta('>r\\nA\\n>a\\nL\\n>b\\nV\\n>c\\nG\\n>d\\nL\\n>e\\nV\\n>f\\nG');check(calculateComparison(diffuse,'r',['a','b','c'],['d','e','f'],.5)[0].comparisonColor==='#555555','Diffuse clades are gray');
+check(calculateComparison(toy,'reference',[],['two'],.5)[0].comparisonColor==='#bfbf94','Missing group is beige');
+const gaps=parseFasta('>r\\nA\\n>a\\nL\\n>b\\n-\\n>c\\nX\\n>d\\nL');const gapScore=calculateComparison(gaps,'r',['a','b','c'],['d'],.5)[0];check(gapScore.clade1.score===100/3&&gapScore.clade1.dominant[0]==='L','Coverage cutoff penalizes gaps/X');
+const partial=calculateComparison(ties,'r',['a'],['c','d'],.5)[0];check(partial.comparisonColor==='#8080ff','Fixed L vs half L/half V uses shared green');
+const swapped=calculateComparison(ties,'r',['c','d'],['a'],.5)[0];check(swapped.comparisonColor==='#ff8080','Swapping groups swaps red and blue');
+check(calculateComparison(ties,'r',['a','b'],['c','d'],.5,51)[0].comparisonColor==='#555555','Raising threshold hides 50 percent sites');
+check(calculateComparison(ties,'r',['a'],['c','d'],.5,100)[0].comparisonColor==='#8080ff','One fully conserved clade passes 100 percent threshold');
+const ninety=parseFasta('>r\\nA\\n>a\\nL\\n>b\\nL\\n>c\\nV\\n>d\\nG');check(calculateComparison(ninety,'r',['a','b','c'],['b','c','d'],.5,100)[0].comparisonColor==='#555555','Neither fully conserved hides at 100 percent');
+check(calculateComparison(toy,'reference',['one'],['two','three','four'],.5,100)[0].comparisonColor==='#ff00ff','Fixed different AA passes 100 percent');
+const nested=comparisonGroups(['a','b','c'],['a','b','c','d','e','f','g','h','i','j']);check(nested.one.length===3&&nested.two.length===7&&nested.excluded2===3,'Nested 3 vs 10 becomes 3 vs 7');
+const nestedSeqs=[{id:'ref',seq:'A'},...nested.one.map(id=>({id,seq:'L'})),...nested.two.map(id=>({id,seq:'V'}))];check(calculateComparison(nestedSeqs,'ref',nested.one,nested.two,.5)[0].comparisonColor==='#ff00ff','Exclusive parent species drive the score, not full parent membership');
+const reverseNested=comparisonGroups(['a','b','c','d'],['a','b']);check(reverseNested.one.join(',')==='c,d'&&reverseNested.two.join(',')==='a,b','Reverse nesting preserves smaller clade');
+check(comparisonGroups(['a','b'],['a','b','c'],true).two.length===3,'Include toggle restores full parent');
+const identical=comparisonGroups(['a','b'],['a','b']);check(!identical.one.length&&!identical.two.length,'Identical clades leave no exclusive species');
+const partialOverlap=comparisonGroups(['a','b'],['b','c']);check(partialOverlap.one.join(',')==='a'&&partialOverlap.two.join(',')==='c','Partial overlap excluded from both');
+const originalIds=['a','b'];comparisonGroups(originalIds,['a','b','c']);check(originalIds.join(',')==='a,b','Assignments are not mutated');
+state.clade1={ids:['one','two']};state.clade2={ids:['two','three']};check(selectedIds().sort().join(',')==='one,three','Comparison filtering uses non-overlapping effective groups');
+$('mode').value='identity';state.selectedNode={ids:['four']};check(selectedIds().join(',')==='four','Identity filter uses clicked node');
+check(siteColor({score:100})===color(100),'Identity color follows original palette');$('mode').value='comparison';
+const frozen=makeClade(rooted.children[0]);const altered=rerootTree(rooted,rooted.children[1].children[0].id);check(frozen.ids.join(',')==='A,B'&&altered.ids.length===4,'Assignments are independent of rerooted node objects');
+`,ctx);console.log('Passed: independent clade consensuses, shared conservation, reference invariance, threshold boundaries, missing data, mode-specific filtering, frozen clades; rooted/commented Newick, quoted names, reroot topology and distances, repeated rerooting, ladderizing and original order, chain/ligand visibility, identity scoring, residue mapping.');
